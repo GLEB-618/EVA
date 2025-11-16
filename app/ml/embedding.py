@@ -30,5 +30,6 @@ class EmbeddingModel:
         sims = cosine_similarity(user_embedding, corpus_embeddings)[0]
 
         top_indices = sims.argsort()[::-1][:top_k] # Индексы самых близких вопросов. В порядке убывания
+        logger.debug(f"top_values: {[sims[i] for i in top_indices]}")
         top_values = [corpus[i] for i in top_indices]
         return top_values

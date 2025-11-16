@@ -2,3 +2,4 @@
 __pycache__/
 logs/
 app/db/init_db.py
+test.py

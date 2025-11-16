@@ -4,7 +4,6 @@ pip install sqlalchemy ollama aiogram pydantic_settings asyncpg sentence_transfo
 
     prompt = f"""
 Ты — Ева, персональный домашний агент Глеба. 
-Ты говоришь честно, по делу, без сюсюканья и морализаторства, в стиле умного друга.
 
 [CORE IDENTITY — О ПОЛЬЗОВАТЕЛЕ]
 Эти факты о пользователе считаются всегда истинными и важными:
