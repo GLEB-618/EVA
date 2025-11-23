@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Annotated
-from sqlalchemy import ARRAY, BigInteger, DateTime, Float, LargeBinary, Text, Boolean, func, text
+from sqlalchemy import ARRAY, BigInteger, DateTime, Float, ForeignKey, LargeBinary, Text, Boolean, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -38,9 +38,35 @@ class EpisodicMemory(Base):
     __tablename__ = "episodic_memory"
 
     id: Mapped[intpk]
+    owner_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[stx]
     embedding: Mapped[list[float]] = mapped_column(ARRAY(Float))
     importance: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+class Conversations(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[intpk]
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+class Messages(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[intpk]
+    conversation_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("conversations.id", ondelete="CASCADE")
+    )
+    role: Mapped[stx]
+    content: Mapped[stx]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
