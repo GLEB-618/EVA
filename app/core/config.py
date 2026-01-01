@@ -1,7 +1,7 @@
-from aiogram import Bot
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from spotipy import Spotify
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
+
 
 class Settings(BaseSettings):
 
@@ -10,141 +10,41 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PASS: str
     DB_NAME: str
+
     BOT_TOKEN: str
     TELEGRAM_API_BASE_URL: str
+    GROUP_ID: int
+
     EMBEDDING_MODEL: str
     LLM_MODEL: str
     URL_CHAT: str
+
+    CLIENT_ID_SP: str
+    CLIENT_SECRET_SP: str
+    REDIRECT_URI_SP: str
+
     LOG_LEVEL: str
     
     @property
     def DATABASE_URL(self):
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
+    @property
+    def spotify_oauth(self) -> SpotifyOAuth:
+        return SpotifyOAuth(
+            client_id=self.CLIENT_ID_SP,
+            client_secret=self.CLIENT_SECRET_SP,
+            redirect_uri=self.REDIRECT_URI_SP,
+            scope="user-top-read user-library-read",
+            # show_dialog=True,
+        )
+    
+    @property
+    def authorization(self):
+        return Spotify(
+            auth_manager=self.spotify_oauth
+        )
+
     model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()
-
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "add_memory_fact",
-            "description": (
-                "Добавляет один факт в таблицу memory_facts.\n\n"
-                "Используй ТОЛЬКО для устойчивых, долгосрочных фактов о пользователе, "
-                "которые с высокой вероятностью останутся верными месяцами или годами.\n"
-                "Примеры: где человек живёт, где учится/работает, его устойчивые интересы и предпочтения.\n\n"
-                "НЕ используй этот инструмент для временных состояний вида "
-                "\"сейчас\", \"на данный момент\", \"пока\", \"сегодня\", "
-                "например: \"сейчас у Глеба нет проектов\" — такие вещи нужно сохранять через add_episodic_memory.\n\n"
-                "Добавляй только то, что реально произошло или что ПРЯМО сказал пользователь, "
-                "а не твои предположения или догадки."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "owner": {
-                        "type": "string",
-                        "description": (
-                            "Кого касается факт. Обычно это имя пользователя, например: 'Глеб'."
-                        )
-                    },
-                    "scope": {
-                        "type": "string",
-                        "enum": ["core", "extended"],
-                        "description": (
-                            "'core' — ядро личности и базовые правила. "
-                            "Обычно заполняется системой и меняется крайне редко. "
-                            "Выбирай 'core' ТОЛЬКО если явно нужно обновить постоянное правило идентичности.\n\n"
-                            "'extended' — устойчивые факты про человека: место жительства, учёба/работа, "
-                            "долгосрочные интересы, важные связи, цели. "
-                            "НЕ клади сюда временные состояния, текущее настроение или одноразовые события."
-                        )
-                    },
-                    "value": {
-                        "type": "string",
-                        "description": (
-                            "Текстовое описание факта.\n"
-                            "Примеры для extended:\n"
-                            "- 'Глеб живёт в Железнодорожном'\n"
-                            "- 'Глеб учится в МИИГАиКе на направлении информационная безопасность'\n"
-                            "- 'Глеб любит игры с сильным сюжетом и сложным выбором'\n\n"
-                            "Не используй для фактов, которые явно относятся к текущему моменту "
-                            "('сейчас', 'пока', 'на данный момент' и т.п.)."
-                        )
-                    },
-                    "importance": {
-                        "type": "number",
-                        "description": (
-                            "Важность факта от 0.0 до 1.0.\n"
-                            "- 0.7–1.0 — по-настоящему важные, долгосрочные вещи (место жительства, учёба, "
-                            "ключевые интересы, значимые отношения).\n"
-                            "- 0.3–0.6 — дополнительные, но полезные характеристики.\n"
-                            "- Для фактов, похожих на текущие состояния или то, что может быстро измениться, "
-                            "либо не используй add_memory_fact, либо ставь importance НЕ ВЫШЕ 0.3 и лучше используй add_episodic_memory.\n"
-                        ),
-                        "minimum": 0.0,
-                        "maximum": 1.0
-                    }
-                },
-                "required": ["owner", "scope", "value", "importance"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "add_episodic_memory",
-            "description": (
-                "Сохраняет эпизод из диалога в таблицу episodic_memory.\n\n"
-                "Используй для конкретных ситуаций и временных состояний: что происходило в разговоре, "
-                "что пользователь делал/чувствовал/выбирал СЕЙЧАС, какие решения принимал.\n"
-                "Подходят вещи вроде: 'обсуждали конкретный проект', 'сейчас у Глеба нет активных учебных проектов', "
-                "'сегодня Глеб жаловался на переутомление', 'обсуждали выбор модели для Евы'.\n\n"
-                "Добавляй только то, что реально произошло в диалоге или что прямо сказал пользователь, "
-                "а не твои предположения."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": (
-                            "Краткое текстовое описание эпизода.\n"
-                            "Примеры:\n"
-                            "- 'обсуждали выбор между qwen2.5 и qwen3 для агента Евы'\n"
-                            "- 'сейчас у Глеба нет активных учебных проектов, кроме общения со мной'\n"
-                            "- 'Глеб сказал, что хочет поскорее съехать из Железнодорожного'\n"
-                        )
-                    },
-                    "importance": {
-                        "type": "number",
-                        "description": (
-                            "Важность эпизода от 0.0 до 1.0.\n"
-                            "Чем выше значение, тем больше шанс, что эпизод будет подтягиваться позже как контекст.\n"
-                            "Высокие значения (0.7+) используй только для действительно значимых поворотных моментов "
-                            "в разговоре или важных признаний пользователя."
-                        ),
-                        "minimum": 0.0,
-                        "maximum": 1.0
-                    }
-                },
-                "required": ["text"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "day_info",
-            "description": (
-                "Возвращает информацию о текущем дне в часовом поясе пользователя. "
-                "Результат включает: время (HH:mm), ISO-дату (YYYY-MM-DD), название дня недели.\n\n"
-                "Используй этот инструмент, когда нужно точно узнать, какая сегодня дата и день недели, "
-                "а также когда в ответе важно не ошибиться с текущим днём (домашки, дедлайны, планы, расписание и т.п.)."
-            )
-        }
-    }
-]

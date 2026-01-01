@@ -8,65 +8,47 @@ from app.db.session import Base
 intpk = Annotated[int, mapped_column(primary_key=True)]
 stx = Annotated[str, mapped_column(Text)]
 
-# class Users(Base):
-#     __tablename__ = "users"
 
-#     id: Mapped[intpk]
-#     tg_id: Mapped[int] = mapped_column(BigInteger)
-#     nickname: Mapped[stx]
-#     real_name: Mapped[stx] = mapped_column(nullable=True, default=None)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True),
-#         server_default=func.now(),
-#     )
-
-class MemoryFacts(Base):
-    __tablename__ = "memory_facts"
+class Memory(Base):
+    __tablename__ = "memory"
 
     id: Mapped[intpk]
-    owner: Mapped[stx]
-    owner_id: Mapped[int] = mapped_column(BigInteger)
     scope: Mapped[stx]
     value: Mapped[stx]
-    importance: Mapped[float] = mapped_column(Float)
+    importance: Mapped[float] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
     )
-
-class EpisodicMemory(Base):
-    __tablename__ = "episodic_memory"
-
-    id: Mapped[intpk]
-    owner_id: Mapped[int] = mapped_column(BigInteger)
-    text: Mapped[stx]
-    embedding: Mapped[list[float]] = mapped_column(ARRAY(Float))
-    importance: Mapped[float] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-    )
-
-class Conversations(Base):
-    __tablename__ = "conversations"
-
-    id: Mapped[intpk]
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 class Messages(Base):
     __tablename__ = "messages"
 
     id: Mapped[intpk]
-    conversation_id: Mapped[int] = mapped_column(
+    thread_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("conversations.id", ondelete="CASCADE")
     )
     role: Mapped[stx]
+    name: Mapped[stx] = mapped_column(
+        nullable=True
+    )
     content: Mapped[stx]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+class Applications(Base):
+    __tablename__ = "applications"
+
+    id: Mapped[intpk]
+    name: Mapped[stx]
+    path: Mapped[stx]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -15,9 +15,8 @@ class EmbeddingModel:
     def __init__(self, model_name: str):
         self.model_name = model_name
         self._executor = ThreadPoolExecutor()
-        logger.info(f"Загружаю embedding-модель: {model_name}")
         self._model = SentenceTransformer(model_name)
-        logger.info(f"Embedding-модель {model_name} успешно загружена")
+        logger.debug(f"Embedding-модель {model_name} успешно загружена")
 
     async def encode(self, inputs: list[str]):
         loop = asyncio.get_running_loop()

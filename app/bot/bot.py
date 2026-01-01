@@ -3,6 +3,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ParseMode
+
+from app.bot.middleware import OnlyGroupMiddleware
 from app.bot.router import router
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -17,10 +19,12 @@ async def run_bot():
         bot = Bot(token=settings.BOT_TOKEN, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         dp = Dispatcher() 
 
+        dp.message.middleware(OnlyGroupMiddleware())
         dp.include_routers(router)
 
         logger.info("Бот запущен")
 
         await dp.start_polling(bot)
+
     except Exception as e:
         logger.error(f"Error: {e}")

@@ -4,7 +4,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from app.core.config import settings
 from app.db.session import session_factory
 from app.ml.embedding import EmbeddingModel
-from app.repository.repo import insert_conversation, insert_fact, insert_episod, insert_messages, select_core_facts, select_facts, select_last_id_conversation, select_messages_by_conversation, select_relevant_episodic_memory
+from app.repository.repo import insert_fact, insert_messages, select_messages_by_thread, select_memory
 
 from app.core.logger import get_logger
 
@@ -26,9 +26,11 @@ def _normalize(arr: np.ndarray) -> np.ndarray:
         return np.full_like(arr, 0.5, dtype=float)
     return (arr - arr_min) / (arr_max - arr_min)
 
-async def _hybrid_method(text: str, lists: list[tuple[Any, float]]) -> list[str]:
-    texts = [value for value, _imp in lists]
-    importances = np.array([imp for _value, imp in lists], dtype=float)
+async def _hybrid_method(text: str, lists: list[dict[str, Any]]) -> list[str]:
+    texts = [item["value"] for item in lists]
+    importances = np.array([item["importance"] for item in lists], dtype=float)
+
+    print(texts, importances)
 
     query_emb = await emb.encode([text])
     corpus_emb = await emb.encode(texts)
@@ -48,74 +50,31 @@ async def _hybrid_method(text: str, lists: list[tuple[Any, float]]) -> list[str]
 
 
 # MEMORY_FACTS
-async def add_memory_fact(owner: str, owner_id: int, scope: str, value: str, importance: float):
+async def add_memory_fact(scope: str, value: str, importance: float):
     async with session_factory() as session:
-        await insert_fact(session, owner, owner_id, scope, value, importance)
+        await insert_fact(session, scope, value, importance)
         await session.commit()
 
-async def get_memory_facts(text: str, user_id: int) -> list[list[str]]:
-    logger.debug("Получение фактов из базы данных")
+async def get_memory_facts(text: str) -> dict[str, Any]:
     async with session_factory() as session:
-        lists = await select_facts(session, user_id)
-        core_facts = lists[0]
-        extended_facts = lists[1]
+        lists = await select_memory(session)
+    extended_facts = lists["extended"]
+    logger.debug(f"Количество фактов в core памяти: {len(lists['core'])}")
+    logger.debug(f"Количество фактов в extended памяти: {len(extended_facts)}")
+    logger.debug(f"Количество фактов в episodic памяти: {len(lists['episodic'])}")
 
-    logger.debug(f"Количество фактов в user core памяти: {len(lists[0])}")
-    logger.debug(f"Количество фактов в extended памяти: {len(lists[1])}")
-
-    if not extended_facts:
-        return [core_facts, []]
-    
     top_extended = await _hybrid_method(text, extended_facts)
+    lists["extended"] = top_extended
 
-    # Возвращаем в том же формате, что и раньше: [core, extended]
-    return [core_facts, top_extended]
+    return lists
 
-async def get_memory_core_facts() -> list[str]:
+async def add_message(thread_id: int, role: str, content: str, name: str|None = None):
+    logger.debug(f"Добавление сообщения в базу данных: thread_id={thread_id}, role={role}, content={content[:30]}...")
     async with session_factory() as session:
-        ls = await select_core_facts(session)
-    logger.debug(f"Количество фактов в core памяти EVA: {len(ls)}")
-    return ls
-
-# EPISODIC_MEMORY
-async def add_episodic_memory(owner_id: int, text: str, importance: float):
-    async with session_factory() as session:
-        vector = await emb.encode_one(text)
-        await insert_episod(session, owner_id, text, vector, importance)
+        await insert_messages(session, thread_id, role, content, name)
         await session.commit()
 
-async def get_episodic_memory(owner_id: int, text: str) -> list[str]:
+async def get_history_messages(thread_id: int) -> list[dict[str, str]]:
     async with session_factory() as session:
-        episodic_facts = await select_relevant_episodic_memory(session, owner_id)
-
-    if not episodic_facts:
-        return []
-    
-    top_episodic = await _hybrid_method(text, episodic_facts)
-
-    return top_episodic
-
-async def get_history_messages(conversation_id: int) -> list[dict[str, str]]:
-    async with session_factory() as session:
-        result = await select_messages_by_conversation(session, conversation_id)
+        result = await select_messages_by_thread(session, thread_id)
     return result
-
-async def add_message(conversation_id: int, role: str, content: str):
-    logger.debug(f"Добавление сообщения в базу данных: conversation_id={conversation_id}, role={role}, content={content[:30]}...")
-    async with session_factory() as session:
-        await insert_messages(session, conversation_id, role, content)
-        await session.commit()
-
-async def add_conversation(user_id: int) -> int:
-    async with session_factory() as session:
-        con_id = await insert_conversation(session, user_id)
-        await session.commit()
-    return con_id
-
-async def get_last_id_conversation(user_id: int) -> int:
-    async with session_factory() as session:
-        last_id = await select_last_id_conversation(session, user_id)
-    if last_id is None:
-        last_id = await add_conversation(user_id)
-    logger.debug(f"Последний ID разговора для пользователя {user_id}: {last_id}")
-    return last_id

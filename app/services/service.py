@@ -1,44 +1,43 @@
-from datetime import datetime
 import json
 from app.core.config import settings
 from app.core.logger import get_logger
-from app.db.session import session_factory
 from app.ml.llm import LLM
-from app.services.service_db import add_episodic_memory, add_memory_fact, add_message, get_last_id_conversation, get_memory_core_facts
-from app.services.service_llm import building_story, post_procces
+from app.services.tools.online_search import search_web
+from app.services.service_db import add_message
+from app.services.service_llm import building_story
+from app.services.tools.spotify import get_top_tracks
 
 
 logger = get_logger(__name__, "logs.log")
 llm = LLM(model=settings.LLM_MODEL, url=settings.URL_CHAT)
 
-async def process_message(text: str, user_id: int) -> str:
+
+async def process_message(text: str, thread_id: int) -> str:
     logger.debug(f"Начало обработки сообщения")
 
-    last_id = await get_last_id_conversation(user_id)
-
-    messages = await building_story(last_id, text, user_id)
+    messages = await building_story(text, thread_id)
     logger.debug(f"История сообщений для LLM: {messages}")
     resp = await llm.generate(messages)
     logger.debug(f"Ответ LLM: {resp}")
 
-    resp = await process_tools(resp, user_id, messages)
+    await add_message(thread_id, "user", text)
+
+    resp = await process_tools(resp, messages, thread_id)
     final_answer = (resp.get("content") or "").strip()
 
-    core_eva = await get_memory_core_facts()
-    core_eva = "\n".join(f"- {value}" for value in core_eva)
-    final_answer = await post_procces(llm, final_answer, core_eva)
+    # final_answer = await post_procces(llm, final_answer, core_eva)
 
-    await add_message(last_id, "user", text)
-    await add_message(last_id, "assistant", final_answer)
+    await add_message(thread_id, "assistant", final_answer)
 
     logger.info(f"Ответ EVA: {final_answer}")
     return final_answer
 
 
-async def process_tools(resp, user_id: int, history: list[dict]):
+async def process_tools(resp, history: list[dict], thread_id: int) -> dict:
     tool_calls = resp.get("tool_calls") or []
     if tool_calls:
         history.append({"role": "assistant","tool_calls": tool_calls})
+        await add_message(thread_id, "assistant", str(tool_calls))
     while tool_calls:
         logger.debug(f"Кол-во запрошенных функций: {len(tool_calls)}")
         for call in tool_calls:
@@ -57,33 +56,61 @@ async def process_tools(resp, user_id: int, history: list[dict]):
             else:
                 args = raw_args or {}
 
-            if func_name == "add_memory_fact":
-                owner = args.get("owner", "")
-                owner_id = user_id if owner != "Eva" else 0
-                scope = args.get("scope", "")
-                value = args.get("value", "")
-                importance = args.get("importance", 0.0)
+            # if func_name == "add_memory_fact":
+            #     owner_id = user_id
+            #     scope = args.get("scope", "")
+            #     value = args.get("value", "")
+            #     importance = args.get("importance", 0.0)
+
+            #     logger.info(
+            #         f"Добавление факта: scope={scope}, value={value}, importance={importance}"
+            #     )
+
+            #     await add_memory_fact(owner_id, scope, value, importance)
+            #     tool_answer = "Факт успешно добавлен."
+
+            # elif func_name == "add_episodic_memory":
+            #     text = args.get("text", "")
+            #     importance = args.get("importance", 0.5)
+
+            #     logger.info(
+            #         f"Добавление эпизода: text={text}, importance={importance}"
+            #     )
+
+            #     await add_episodic_memory(user_id, text, 0.5)
+            #     tool_answer = "Эпизод успешно сохранён в память."
+
+            if func_name == "search_web":
+                query = args.get("query", "")
+                n_results = args.get("n_results", 5)
+                region = args.get("region", "ru-ru")
+                safesearch = args.get("safesearch", "moderate")
+                with_content = args.get("with_content", True)
 
                 logger.info(
-                    f"Добавление факта: owner={owner}, scope={scope}, value={value}, importance={importance}"
+                    f"Выполнение веб-поиска: query={query}, n_results={n_results}, region={region}, safesearch={safesearch}, with_content={with_content}"
                 )
 
-                await add_memory_fact(owner, owner_id, scope, value, importance)
-                tool_answer = "Факт успешно добавлен."
-                
-            elif func_name == "day_info":
-                now = datetime.now()
-                tool_answer = f"Время: {now.strftime('%H:%M')}\nДата: {now.strftime('%Y-%m-%d')}\nДень недели: {now.strftime('%A')}"
+                search_results = await search_web(query, n_results, region)
+                logger.debug(f"Результаты поиска: {search_results}")
+                tool_answer = f"Результаты поиска: {search_results}"
 
-            elif func_name == "add_episodic_memory":
-                text = args.get("text", "")
-                importance = args.get("importance", 0.5)
-                await add_episodic_memory(user_id, text, 0.5)
-                tool_answer = "Эпизод успешно сохранён в память."
+            elif func_name == "top_tracks":
+                limit = args.get("limit", 10)
+                offset = args.get("offset", 0)
+                time_range = args.get("time_range", "medium_term")
+
+                logger.info(
+                    f"Получение топ-треков: limit={limit}, offset={offset}, time_range={time_range}"
+                )
+
+                tracks = await get_top_tracks(limit=limit, offset=offset, time_range=time_range)
+                logger.debug(f"Топ треки: {tracks}")
+                tool_answer = f"Ваши топ треки:\n{tracks}"
             
             history.append({"role": "tool", "name": func_name, "content": tool_answer})
+            await add_message(thread_id, "tool", tool_answer, func_name)
 
-        logger.debug(f"История после tool: {history}")
         resp = await llm.generate(history)
         logger.debug(f"Ответ LLM (tool): {resp}")
 

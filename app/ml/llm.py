@@ -1,6 +1,6 @@
 from ollama import AsyncClient
-from app.core.config import TOOLS
 from app.core.logger import get_logger
+from app.core.tools import MAIN_TOOL
 
 logger = get_logger(__name__, "logs.log")
 
@@ -14,8 +14,17 @@ class LLM:
         response = await self.client.chat(
             model=self.model,
             messages=messages,
-            think=True,
-            tools=TOOLS
+            tools=MAIN_TOOL,
+        )
+        return response["message"]
+    
+    async def generate_with_temp(self, messages: list[dict], temp: float):
+        response = await self.client.chat(
+            model=self.model,
+            messages=messages,
+            options = {
+                "temperature": temp, 
+            },
         )
         return response["message"]
     
